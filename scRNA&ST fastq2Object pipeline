@@ -1,0 +1,77 @@
+··········································10X scRNA SEQ·····················································
+#!bin/bash
+#cellranger-7.2.0
+cellranger=$(pwd)/biosoft/cellranger-7.2.0/spaceranger
+${cellranger} count --id=mysample \
+           --transcriptome=$(pwd)/genome/TM-1/cellranger_index/TM_1 \
+           --fastqs=$fastq_path \
+           --sample=mysample \
+           --localcores=8 \
+           --localmem=64 \
+           --no-bam --nosecondary
+··········································BMKMANU S1000 ST RNA SEQ··········································
+#offical guidance
+#https://mp.weixin.qq.com/s/9CoAGAyHCNxhJz4on7340Q
+#cat config.txt
+### Globle parameters
+## data 数据路径
+FQ1     BMK_ST/Unknown_BV626-003X0001_good_1.fq.gz
+FQ2     BMK_ST/Unknown_BV626-003X0001_good_2.fq.gz
+
+## Flu info file 荧光解码文件路径
+FLU     BMK_ST/stRNA_tif_PNG/BMK240111-BV626-003X0001-01-20230920-CH11BN19F3-A2-HE.txt
+
+## AllheStat.py & CellSplit 组织识别及细胞分割
+#HE染色图片路径、是否识别组织内部空白(1识别，0忽略，默认0忽略)
+HE      BMK_ST/stRNA_tif_PNG/BMK240111-BV626-003X0001-01-20230920-CH11BN19F3-A2-HE.tif
+#INSIDE 0
+#GRAY   200
+#是否做细胞分割及荧光图片路径、颜色通道
+CellSplit       False
+#fluorescence   /path/to/fluorescence.tiff
+#fluorescence_channl       0
+#FLGRAY 15
+#cells_npy      /path/to/cells/npyfile
+#YAML   /path/to/cell_split/parameter/file
+
+## Ref genome 参考基因组版本信息、STAR建库目录、gff/gtf文件及features文件路径
+#GenomeVer      xxxx
+INDEX   genome/TM-1/STAR_index
+GFF             genome/TM-1/TM-1_V2.1.gene.gtf
+FEATURE     biosoft/BSTMatrix_v2.3/features.tsv
+
+## out put    输出结果及输出文件前缀
+OUTDIR  BMK_ST
+PREFIX  seed_36h
+
+### Local parameters
+## fastq2BcUmi    barcode版本类型(一般为V2版本)及barcode识别线程数
+BCType  V2
+BCThreads       8
+
+## Umi2Gene       SART比对参数(注：STAR线程数设置太多时可能会在bam文件排序时出现打开文件数太多的错误)
+Sjdboverhang    100
+STARThreads         8
+
+## ENV      python和Rscript的路径，如不提供则使用系统环境中的版本(不提供请注释掉以下参数)
+PYTHON  miniconda3/envs/py39/bin/python
+Rscript miniconda3/envs/py39/bin/R
+#generate expression matrix
+./BSTMatrix   -c  config.txt    -s  1,2,3,4,5,6,7,8
+#select a suitalbe resolution
+#Create an object
+
+··········································10X Visium ST RNA SEQ·············································
+#!bin/bash
+#spaceranger-2.1.1
+spaceranger=$(pwd)/biosoft/spaceranger-2.1.1/spaceranger
+${spaceranger} count --id=seed_24h \
+                  --transcriptome=$(pwd)/genome/TM-1/spaceranger_index/TM_1 \
+                  --fastqs=$(pwd)/project/seed_24h \
+                  --sample=seed_24h-1,seed_24h-2 \
+                  --image=$(pwd)/project/seed_24h/seed_24h.jpg \
+                  --slide=V11Y03-330 \
+                  --area=A1 \
+                  --localcores=8 \
+                  --localmem=64  \
+                  --no-bam --nosecondary
