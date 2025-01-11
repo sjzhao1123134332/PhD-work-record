@@ -1,0 +1,43 @@
+#耗材准备
+1：小米千兆路由器4A|AC1200，京东价格100元
+2：网线*2根
+## 步骤
+### 路由器连接校园网
+1：路由器通电，网线1连接办公室的网线接口，网线2连接服务器。不区分WAN口和LAND口。
+2：浏览器输入192.168.31.1，设置WiFi名称（SSID），密码，管理员密码。连接方式：动态IP。
+3:高级设置-VPN-添加服务。名称：任意；协议类型：L2TP；服务器：lns.zju.edu.cn；账号密码是个人上网VPN账号密码，建议用导师的。点击：连接；开机自动连接：开。
+### 设置静态IP
+# 这步的目的是固定每次ssh连接的IP地址。即使断电重连，也是同一个IP。
+1：常用-上网设置。上网方式：静态IP，IP地址、子网掩码、网关、DNS复制上面IPv4的信息。
+### 端口转发设置
+1：路由状态-终端设备-找到带有“本机”字眼的服务器MAC地址，复制IP地址和MAC地址到记事本。
+2：高级设置-端口转发-DMZ打开，填写上一步复制的192开头的局域网IP地址，应用。
+
+# 拔掉路由器电源，重启后设置生效。
+# 测试ping外网
+ping bilibili.com
+PING bilibili.com (119.3.70.188) 56(84) bytes of data.
+64 bytes from ecs-119-3-70-188.compute.hwclouds-dns.com (119.3.70.188): icmp_seq=1 ttl=42 time=11.0 ms
+64 bytes from ecs-119-3-70-188.compute.hwclouds-dns.com (119.3.70.188): icmp_seq=2 ttl=42 time=11.6 ms
+64 bytes from ecs-119-3-70-188.compute.hwclouds-dns.com (119.3.70.188): icmp_seq=3 ttl=42 time=11.7 ms
+64 bytes from ecs-119-3-70-188.compute.hwclouds-dns.com (119.3.70.188): icmp_seq=4 ttl=42 time=11.8 ms
+64 bytes from ecs-119-3-70-188.compute.hwclouds-dns.com (119.3.70.188): icmp_seq=5 ttl=42 time=11.7 ms
+64 bytes from ecs-119-3-70-188.compute.hwclouds-dns.com (119.3.70.188): icmp_seq=6 ttl=42 time=12.7 ms
+^C
+--- bilibili.com ping statistics ---
+6 packets transmitted, 6 received, 0% packet loss, time 5009ms
+rtt min/avg/max/mdev = 10.974/11.741/12.650/0.490 ms
+# 测试ping浙大镜像网站
+ping mirror.zju.edu.cn
+PING mirror.zju.edu.cn (10.203.1.201) 56(84) bytes of data.
+64 bytes from 10.203.1.201 (10.203.1.201): icmp_seq=1 ttl=60 time=10.3 ms
+64 bytes from 10.203.1.201 (10.203.1.201): icmp_seq=2 ttl=60 time=12.4 ms
+64 bytes from 10.203.1.201 (10.203.1.201): icmp_seq=3 ttl=60 time=10.9 ms
+64 bytes from 10.203.1.201 (10.203.1.201): icmp_seq=4 ttl=60 time=10.9 ms
+64 bytes from 10.203.1.201 (10.203.1.201): icmp_seq=5 ttl=60 time=11.4 ms
+64 bytes from 10.203.1.201 (10.203.1.201): icmp_seq=6 ttl=60 time=11.2 ms
+^C
+--- mirror.zju.edu.cn ping statistics ---
+6 packets transmitted, 6 received, 0% packet loss, time 5008ms
+rtt min/avg/max/mdev = 10.332/11.202/12.438/0.649 ms
+# 由于在校园网环境，我把Ubuntu，CRAN，pip的源都换成了浙大镜像，下载速度在>15 Mb/s
