@@ -1,0 +1,67 @@
+## 适用于任意物种，任意平台（Illumina or BGI）的二代WGS数据处理流程
+## 染色体超级长的物种在使用samtools，sambamba时大概率遇到问题
+## 经验：call SNP和INDEL变异时，gatk4比samtools+bcftools好用，能实时生成结果文件
+## JAVA程序非常耗费RAM
+··········································WGS·····················································
+#!/bin/bash
+#software path
+#codna activate wgs
+fastp=$(pwd)/miniconda3/envs/wgs/bin/fastp
+bwa=$(pwd)/miniconda3/envs/wgs/bin/bwa
+samtools=$(pwd)/miniconda3/envs/wgs/bin/samtools
+sambamba=$(pwd)/miniconda3/envs/rna/bin/sambamba
+qualimap=$(pwd)/miniconda3/envs/wgs/bin/qualimap
+#pipeline
+ref=/mnt/d/genome/TM-1/TM-1_V2.1.fa
+fqpath=/mnt/d/eQTL/Rawdata
+cat sample_ID.txt | while read id; do
+	${fastp} \
+	--in1 Rawdata/${id}_1.f*q.gz \
+	--in2 Rawdata/${id}_2.f*q.gz \
+	--out1 Cleandata/${id}_R1.fq.gz \
+	--out2 Cleandata/${id}_R2.fq.gz \
+	--json 01_Sequencing_and_Mapping_Quality/fastp/${id}.json \
+	--html 01_Sequencing_and_Mapping_Quality/fastp/${id}.html \
+	--trim_poly_g --poly_g_min_len 10 --trim_poly_x --poly_x_min_len 10 --cut_front --cut_tail --cut_window_size 4 --qualified_quality_phred 15 --low_complexity_filter --complexity_threshold 30 --length_required 30 --thread 16
+	rm -f Rawdata/${id}_*.f*q.gz
+	#mapping to genome
+	${bwa} mem -t 32 -R "@RG\tID:${id}\tSM:${id}\tPL:illumina\tLB:${id}" ${ref} Cleandata/${id}_R1.fq.gz Cleandata/${id}_R2.fq.gz >Bam/${id}.sam 2>01_Sequencing_and_Mapping_Quality/bwa/${id}.log
+	$sambamba view -t 32 Bam/${id}.sam -S -h -f bam -o Bam/${id}.bam
+	rm -f Bam/${id}.sam
+	$sambamba sort -t 32 Bam/${id}.bam -o Bam/${id}_sort.bam
+	rm -f Bam/${id}_fixmate.bam
+	$qualimap bamqc -bam Bam/${id}_sort.bam -nw 40 -hm 3 --java-mem-size=10G --outdir=01_Sequencing_and_Mapping_Quality/bamqc/${id}
+	${sambamba} markdup -t 32 -r -p Bam/${id}_sort.bam Bam/${id}_rmdup.bam
+	rm -f Bam/${id}_sort.bam
+	#statements
+done
+#gVCF
+picard CreateSequenceDictionary R=$ref O=${ref}.dict
+ls *rmdup.bam |sed 's/_rmdup.bam//g'|while read i;do
+	cat chrinfo.txt|while read id;do
+    echo "gatk --java-options '-Xmx24g' HaplotypeCaller \
+    --native-pair-hmm-threads 16 -R  $ref \
+    -I Bam/${i}_rmdup.bam \
+    -L ${id} \
+    -O gatk/${i}_${id}.vcf.gz \
+    --max-alternate-alleles 4\
+    --sample-ploidy 2 \
+    -ERC GVCF > gatk/${i}_${id}.log 2>&1"
+    done
+done >gVCF.sh
+Parafly -c gVCF.sh -CPU 26
+#CombineGVCFs
+cat chrinfo.txt |while read id;do
+	ls *_${id}.vcf.gz > ${id}.gvcf.list
+    #wc -l ${id}.gvcf.list
+	echo "gatk --java-options \"-Xmx24g\" CombineGVCFs -R $ref -V ${id}.gvcf.list -O ${id}.gvcf.gz >CombineGVCFs_${id}.log 2>&1"
+done >CombineGVCFs.sh
+nohup ParaFly -c CombineGVCFs.sh -CPU 26 &
+#genotype gVCF
+cat chrinfo.txt |while read id;do
+	echo "gatk --java-options \"-Xmx24g\" GenotypeGVCFs --allow-old-rms-mapping-quality-annotation-data -R $ref -V ${id}.gvcf.gz -O ${id}.vcf.gz >GenotypeGVCFs_${id}.log 2>&1"
+done >GenotypeGVCFs.sh
+nohup ParaFly -c GenotypeGVCFs.sh -CPU 26 &
+#MergeVcfs
+cat chrinfo.txt |while read id;do ls ${id}.vcf.gz;done >all_chr_vcf.list
+nohup gatk --java-options '-Xmx24g' MergeVcfs -I all_chr_vcf.list -O raw.vcf.gz >gatk_MergeVcfs.log 2>&1 &
