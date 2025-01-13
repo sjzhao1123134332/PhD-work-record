@@ -41,6 +41,192 @@ cover/  #此文件夹同样应用于PCA分析绘图
 └── file_temp_pca.log
 
 # 表达量文件准备
+## 表达量原始数据路径在
+/mnt/d/eQTL_RNA/lnc_expression
+/mnt/d/eQTL_RNA/pcg_expression
+#R中整理表达量信息的最终形态
+样本名	样本名 数值
+## 从Stringtie输出的表达矩阵整理
+bash merge_FPKM_stringtie.sh
+#!/bin/bash
+#删除之前测试的中间文件
+rm -f *.use
+rm -f *.tab
+ls *.txt|sed 's/.txt//g'|while read id; do
+        #保留表头，并替换FPKM为样本名
+        #删除STRG.开头的lnc，余下才是PCG
+        head -1 ${id}.txt|cut -f 1,8 | sed "s/FPKM/${id}/">>${id}.use && grep -v "STRG." ${id}.txt |cut -f 1,8 |sort -t $'\t' -k 1,1 -u >>${id}.use
+        #statements
+done
+#-t制表符分割；默认按照第一列匹配
+csvtk -t join *.use > FPKM.tab
+#删除中间文件
+rm -f *.use
+## R实现qqnorm
+library(tidyverse)
+library(dplyr)
+library(scales)
+rm(list = ls())
+
+# 工作路径 --------------------------------------------------------------------
+
+work_path <- "E:/GWAS/pcg_expression/"
+setwd(work_path)
+
+# 重测序的样本列表 ----------------------------------------------------------------
+
+
+#读取有基因型信息的样本列表
+wgs_sm <- read.table("D:/eQTL/vcf/snp_sm_id.txt",header = FALSE)
+
+# 读取全部PCG的表达量信息 --------------------------------------------------------------
+
+df_pcg <- read.delim("FPKM.tab",
+                 header = TRUE,
+                 check.names = FALSE) #不改动列名
+
+# 读取全部lnc的表达量信息 -----------------------------------------------------------
+
+df_lnc <- read.delim("../lnc_expression/FPKM.tab",
+                     header = TRUE,
+                     check.names = FALSE) #不改动列名
+
+# 合并pcg&lnc的表达矩阵 ----------------------------------------------------------
+df <- rbind(df_pcg,df_lnc)
+rm(df_pcg)
+rm(df_lnc)
+#更改第一列行名
+colnames(df)[1] <- "gene_id"
+df <- tibble::column_to_rownames(df,var = "gene_id")
+# 保留数据框中指定列名的列 ------------------------------------------------------------
+df <- df[,colnames(df) %in% wgs_sm$V1]
+dim(df)
+#行数=基因数，列数=样本数目
+
+# 根据表达量过滤 -----------------------------------------------------------------
+#在95%的样本中FPKM>1
+retain_gene <- c()
+for (i in 1:nrow(df)) {
+  tmp_gene <- rownames(df)[i] #临时基因
+  tmp_df <- df[i,] %>% t %>% data.frame()#临时数据框
+  colnames(tmp_df) <- c("ID")
+  tmp_ratio <- (subset(tmp_df,ID  > 1) %>% nrow())/NROW(tmp_df)
+  #print(tmp_ratio)
+  print(percent(i/nrow(df)))
+  if (tmp_ratio > 0.95) {
+    retain_gene <- append(retain_gene,rownames(df)[i])
+  }
+}
+
+# 统计PCG和LNC的数量 ------------------------------------------------------------
+print(paste0("Total Gene number: ",length(retain_gene),";",
+             "PCG number: ",grep("GH_",retain_gene) %>% length(),";",
+             "Non-coding number: ",grep("MSTRG",retain_gene) %>% length()))
+
+# 保存参与下游分析的gene list ------------------------------------------------------
+write.table(retain_gene %>% data.frame(), 
+            "../phenotype/eQTL_gene_input_list.tab",
+            row.names = FALSE,
+            col.names = FALSE,
+            quote = FALSE,
+            sep = "\t")
+
+# 保存用于eQTL的表达量信息 ----------------------------------------------------------
+ExprSet <- subset(df,rownames(df) %in% retain_gene)
+write.table(ExprSet,"ExprSet_FPKM_eQTL_raw_382",row.names = TRUE,col.names = TRUE,quote = FALSE,sep = "\t")
+
+
+# qqnorm ------------------------------------------------------------------
+
+df_qqnorm=ExprSet
+#行名基因，列名样本
+#按照基因（行）进行标准化
+for (i in 1:nrow(df_qqnorm)) {
+  #打印进度条
+  print(i)
+  print(percent(i/ncol(df_qqnorm)))
+  #开始qqnorm
+  tmp_df <- df_qqnorm[i,] %>% t
+  tmp_df_qqnorm <- qqnorm(as.numeric(tmp_df))$x %>% data.frame()
+  tmp_df_final <- cbind(tmp_df,tmp_df_qqnorm) %>% tibble::rownames_to_column("ID") %>% dplyr::mutate(id2=ID) %>% dplyr::select(1,4,3)
+  write.table(tmp_df,paste0("phenotype/",colnames(tmp_df)[3],".txt"),row.names = FALSE,col.names = FALSE,quote = FALSE,sep = "\t")
+}
+
+
+# README ----------------------------------------------------------------------
+
+#eQTL参与关联分析的基因列表/mnt/e/GWAS/phenotype/eQTL_gene_input_list.tab
+#其中PCG:25432;lnc:2067
+
+#emmax的输入格式为:ID,ID,value
+#147F    147F    1.71476983247738
+#51DALING        51DALING        0.68275068238141
+#759     759     -0.208192667005667
+
+# 所有基因表达量-SNP和INDEL基因型关联分析
+#!/bin/bash
+#软件及输入文件路径
+genotype=genotype/eQTL
+kinship=kinship/382_emmax_in.BN.kinf
+cover=cover/382_cov.txt
+emmax=/data1/public_software/emmax-intel64
+cat phenotype_FPKM/eQTL_gene_input_list.tab |while read id; do 
+  $emmax -v -d 10 -t $genotype \
+  -pphenotype_FPKM//${id}.txt \
+  -k $kinship \
+  -o ps/$id \
+  -c $cover
+done
+
+# 曼哈顿图
+# 导入需要的库
+library(qqman)
+library(dplyr)
+library(tidyr)
+library(data.table)
+
+# 设置颜色方案
+mycolor3 <- c("#fcba75","#8ec872","#ad9f35","#8ec872","#d07794","#ff9796",
+              "#b178a3","#e56464","#6cb25e","#ca9abe","#d6b54c","#e41e25",
+              "#307eb9","#4cb049","#974e9e","#f57f21","#f4ed35","#a65527",
+              "#9bc7e0","#b11f2b","#f6b293","#b38a8f","#bba6a6","#d5b3a5",
+              "#e69db8","#c5ae8d","#87b2d4","#babb72","#4975a5","#499994",
+              "#93a95d","#f19538")
+
+# 读取表型文件
+trait_list <- read.table("phenotype_FPKM/eQTL_gene_input_list.tab", header = FALSE)
+
+# 循环生成每个表型的曼哈顿图
+for (trait in trait_list$V1) {
+  time1 <- Sys.time()
+  
+  # 读取数据并清洗
+  path <- paste0("ps/", trait, ".ps")
+  df <- fread(path, select = c(1, 4))  # 读取文件时直接选择需要的列
+  colnames(df) <- c("SNP", "P")
+  
+  # 分离SNP列为CHR和BP
+  df <- df %>%
+    separate(SNP, into = c("CHR", "BP"), remove = FALSE) %>%
+    mutate(
+      CHR = as.numeric(CHR),
+      BP = as.numeric(BP),
+      P = as.numeric(P)
+    )
+  
+  # 保存曼哈顿图为PNG文件
+  png(paste0("Manhattan_plot/", trait, ".png"), width = 1600, height = 1000, res = 120)
+  manhattan(df, ylim = c(0, 10), cex = 0.6, cex.axis = 0.9, col = mycolor3,
+            main = trait,  # 图形标题
+            suggestiveline = -log10(7.61E-07),  # cut-off线
+            genomewideline = FALSE)
+  dev.off()
+  
+  # 记录执行时间
+  time2 <- Sys.time()
+  print(time2 - time1)
+}
+
 
 # 所有时间点的表型-SNP和INDEL基因型关联分析
 #关联分析脚本
