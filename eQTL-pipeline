@@ -1,0 +1,68 @@
+# 基因型文件准备
+## emmax软件路径
+emmax=/data1/public_software/emmax-intel64
+emmax_kin=/data1/public_software/emmax-kin-intel64
+## 基因型文件准备
+工作路径 /data1/zsj/GWAS
+vcf=382.beagle.vcf.gz
+plink --vcf $vcf --recode --out eQTL --noweb
+plink --file eQTL --recode 12 transpose --output-missing-genotype 0 --out eQTL --noweb
+#第三列换成INDEL ID,格式CHR:POSITION
+awk -F'[ ]' '{$2=$1":"$4;print $0}' eQTL.tped >382_indel.tped && eQTL.tped
+#注意把名字改回来
+genotype/
+├── eQTL.log
+├── eQTL.map
+├── eQTL.nosex
+├── eQTL.ped
+├── eQTL.tfam
+└── eQTL.tped
+#亲缘关系文件准备
+${emmax_kin} genotype/eQTL -v -d 10 -o kinship/382_emmax_in.BN.kinf
+kinship/
+└── 382_emmax_in.BN.kinf
+#PCA
+plink --noweb --file ../genotype/eQTL --make-bed --out eQTL
+gcta64 --bfile eQTL --make-grm --autosome --out eQTL
+gcta64 --grm eQTL --pca --out file_temp_pca
+cut -d " " -f 2,3,4,5 file_temp_pca.eigenvec|awk '{print $1"\t"$1"\t1\t"$2"\t"$3"\t"$4}' >382_cov.txt
+cover/  #此文件夹同样应用于PCA分析绘图
+├── 382_cov.txt
+├── eQTL.bed
+├── eQTL.bim
+├── eQTL.fam
+├── eQTL.grm.N.bin
+├── eQTL.grm.bin
+├── eQTL.grm.id
+├── eQTL.log
+├── eQTL.nosex
+├── file_temp_pca.eigenval
+├── file_temp_pca.eigenvec
+└── file_temp_pca.log
+
+# 表达量文件准备
+
+# 所有时间点的表型-SNP和INDEL基因型关联分析
+#关联分析脚本
+#!/bin/bash
+#软件及输入文件路径
+genotype=/mnt/e/GWAS/genotype/382_snp
+kinship=/mnt/e/GWAS/kinship/382_snp_emmax_in.BN.kinf
+cover=/mnt/e/GWAS/genotype/382_snp_cov.txt
+emmax=/mnt/d/biosoft/emmax-intel64
+ls vigor_phenotype/|while read id; do
+  #循环表型,此时路径为phenotype/trait01
+  cd vigor_phenotype/${id}
+  ls *.txt|sed 's/.txt//g'|while read time; do
+    #循环时间点
+    echo "${id} and time ${time} GWAS has started!"
+      $emmax -v -d 10 -t $genotype \
+      -p ${time}.txt \
+      -k $kinship \
+      -o ${time}_snp \
+      -c $cover
+      rm -f ${time}_snp.log
+      rm -f ${time}_snp.reml
+  done
+  cd /mnt/e/GWAS
+done
